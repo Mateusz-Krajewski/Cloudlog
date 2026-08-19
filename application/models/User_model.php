@@ -99,9 +99,11 @@ class User_Model extends CI_Model {
 	}
 
 	function hasQrzKey($user_id) {
+		$user_id = (int) $user_id;
 		$this->db->where('station_profile.qrzapikey is not null');
 		$this->db->where('station_profile.qrzapikey != ""');
-		$this->db->join('station_profile', 'station_profile.user_id = '.$user_id);
+		$this->db->join('station_profile', 'station_profile.user_id = '.$this->config->item('auth_table').'.user_id');
+		$this->db->where('station_profile.user_id', $user_id);
 		$query = $this->db->get($this->config->item('auth_table'));
 
 		$ret = $query->row();
@@ -113,7 +115,7 @@ class User_Model extends CI_Model {
 	}
 
 	function get_email_address($station_id) {
-		$this->db->where('station_id', $station_id);
+		$this->db->where('station_id', (int) $station_id);
 		$this->db->join('station_profile', 'station_profile.user_id = '.$this->config->item('auth_table').'.user_id');
 		$query = $this->db->get($this->config->item('auth_table'));
 
@@ -202,7 +204,8 @@ class User_Model extends CI_Model {
 		$user_pota_lookup, $user_show_notes, $user_column1, $user_column2, $user_column3, $user_column4, $user_column5,
 		$user_show_profile_image, $user_previous_qsl_type, $user_amsat_status_upload, $user_mastodon_url,
 		$user_default_band, $user_default_confirmation, $user_qso_end_times, $user_quicklog, $user_quicklog_enter,
-		$language, $user_hamsat_key, $user_hamsat_workable_only, $callbook_type, $callbook_username, $callbook_password) {
+		$language, $user_hamsat_key, $user_hamsat_workable_only, $callbook_type, $callbook_username, $callbook_password,
+		$user_winkey = 0, $user_winkey_websocket = 0, $user_remote_operation = 0) {
 		// Check that the user isn't already used
 		if(!$this->exists($username)) {
 			$data = array(
@@ -238,6 +241,9 @@ class User_Model extends CI_Model {
 				'user_quicklog' => (int)$user_quicklog,
 				'user_quicklog_enter' => xss_clean($user_quicklog_enter),
 				'language' => xss_clean($language),
+				'winkey' => (int)$user_winkey,
+				'winkey_websocket' => (int)$user_winkey_websocket,
+				'remote_operation' => (int)$user_remote_operation,
 				'user_eqsl_qth_nickname' => "",
 			);
 
@@ -264,6 +270,9 @@ class User_Model extends CI_Model {
 			$this->db->query("insert into paper_types (user_id,paper_name,metric,width,orientation,height) SELECT ".$insert_id.", paper_name, metric, width, orientation,height FROM paper_types where user_id = -1;");
 			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'hamsat','hamsat_key','api','".xss_clean($user_hamsat_key)."');");
 			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'hamsat','hamsat_key','workable','".xss_clean($user_hamsat_workable_only)."');");
+			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'oscarwatch','api_token','value','');");
+			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'oscarwatch','status_upload','enabled','0');");
+			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'oscarwatch','force_amsat','enabled','0');");
 
 			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'callbook','callbook_type','value','".xss_clean($callbook_type)."');");
 			$this->db->query("insert into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $insert_id . ", 'callbook','callbook_username','value','".xss_clean($callbook_username)."');");
@@ -326,10 +335,14 @@ class User_Model extends CI_Model {
 					'language' => xss_clean($fields['language']),
 					'winkey' => (isset($fields['user_winkey']) && is_numeric($clean = xss_clean($fields['user_winkey'])) && $clean !== '') ? intval($clean) : 0,
 					'winkey_websocket' => isset($fields['user_winkey_websocket']) ? xss_clean($fields['user_winkey_websocket']) : 0,
+					'remote_operation' => isset($fields['user_remote_operation']) ? xss_clean($fields['user_remote_operation']) : 0,
 				);
 
 				$this->db->query("replace into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $fields['id'] . ", 'hamsat','hamsat_key','api','".xss_clean($fields['user_hamsat_key'])."');");
 				$this->db->query("replace into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $fields['id'] . ", 'hamsat','hamsat_key','workable','".xss_clean($fields['user_hamsat_workable_only'])."');");
+				$this->db->query("replace into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $fields['id'] . ", 'oscarwatch','api_token','value','".xss_clean($fields['user_oscarwatch_token'] ?? '')."');");
+				$this->db->query("replace into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $fields['id'] . ", 'oscarwatch','status_upload','enabled','".(int)($fields['user_oscarwatch_status_upload'] ?? 0)."');");
+				$this->db->query("replace into user_options (user_id, option_type, option_name, option_key, option_value) values (" . $fields['id'] . ", 'oscarwatch','force_amsat','enabled','".(int)($fields['user_force_amsat_status_upload'] ?? 0)."');");
 
 				// Check to see if the user is allowed to change user levels
 				if($this->session->userdata('user_type') == 99) {
@@ -373,7 +386,11 @@ class User_Model extends CI_Model {
 
 				if($fields['user_eqsl_password'] != NULL)
 				{
-					$data['user_eqsl_password'] = $fields['user_eqsl_password'];
+					$this->load->library('encryption');
+					$encrypted_password = $this->encryption->encrypt($fields['user_eqsl_password']);
+					if ($encrypted_password !== false && $encrypted_password !== null) {
+						$data['user_eqsl_password'] = 'enc:' . $encrypted_password;
+					}
 				}
 
 				// Update the user
@@ -430,6 +447,11 @@ class User_Model extends CI_Model {
 		$CI =& get_instance();
         $CI->load->model('user_options_model');
         $callbook_type_object = $CI->user_options_model->get_options('callbook')->result();
+		$remote_operation_option = $CI->user_options_model->get_options(
+			'remote_operation',
+			array('option_name' => 'enabled', 'option_key' => 'value'),
+			$id
+		)->row();
 		$show_qsl_cards_option = $CI->user_options_model->get_options(
 			'menu',
 			array('option_name' => 'show_qsl_cards', 'option_key' => 'enabled'),
@@ -438,6 +460,11 @@ class User_Model extends CI_Model {
 		$show_sstv_images_option = $CI->user_options_model->get_options(
 			'menu',
 			array('option_name' => 'show_sstv_images', 'option_key' => 'enabled'),
+			$id
+		)->row();
+		$oscarwatch_status_option = $CI->user_options_model->get_options(
+			'oscarwatch',
+			array('option_name' => 'status_upload', 'option_key' => 'enabled'),
 			$id
 		)->row();
 
@@ -464,6 +491,10 @@ class User_Model extends CI_Model {
 
 		$u = $this->get_by_id($id);
 		$has_eqsl_credentials = ($u->row()->user_eqsl_name != '' && $u->row()->user_eqsl_password != '');
+		if (!$has_eqsl_credentials) {
+			$this->load->model('eqsl_mappings_model');
+			$has_eqsl_credentials = $this->eqsl_mappings_model->has_mappings_for_user($id);
+		}
 		$show_qsl_cards = true;
 		if (isset($show_qsl_cards_option->option_value)) {
 			$show_qsl_cards = ($show_qsl_cards_option->option_value == 'true');
@@ -471,6 +502,10 @@ class User_Model extends CI_Model {
 		$show_sstv_images = false;
 		if (isset($show_sstv_images_option->option_value)) {
 			$show_sstv_images = ($show_sstv_images_option->option_value == 'true');
+		}
+		$oscarwatch_status_upload = 0;
+		if (isset($oscarwatch_status_option->option_value)) {
+			$oscarwatch_status_upload = (int) $oscarwatch_status_option->option_value;
 		}
 
 		$userdata = array(
@@ -505,6 +540,7 @@ class User_Model extends CI_Model {
 			'user_column5' => isset($u->row()->user_column5) ? $u->row()->user_column5: 'Country',
 			'user_previous_qsl_type' => isset($u->row()->user_previous_qsl_type) ? $u->row()->user_previous_qsl_type: 0,
 			'user_amsat_status_upload' => isset($u->row()->user_amsat_status_upload) ? $u->row()->user_amsat_status_upload: 0,
+			'user_oscarwatch_status_upload' => $oscarwatch_status_upload,
 			'user_mastodon_url'	 => $u->row()->user_mastodon_url,
 			'user_default_band'	 => $u->row()->user_default_band,
 			'user_default_confirmation'	 => $u->row()->user_default_confirmation,
@@ -514,7 +550,8 @@ class User_Model extends CI_Model {
 			'active_station_logbook' => $u->row()->active_station_logbook,
 			'language' => isset($u->row()->language) ? $u->row()->language: 'english',
 			'isWinkeyEnabled' => $u->row()->winkey,
-			'isWinkeyWebsocketEnabled' => (bool)$u->row()->winkey_websocket,
+			'isWinkeyWebsocketEnabled' => isset($u->row()->winkey_websocket) ? (bool)$u->row()->winkey_websocket : false,
+			'isRemoteOperationEnabled' => (isset($remote_operation_option->option_value) ? ((string)$remote_operation_option->option_value === 'true' || (string)$remote_operation_option->option_value === '1') : (isset($u->row()->remote_operation) ? (bool)$u->row()->remote_operation : false)),
 			'hasQrzKey' => $this->hasQrzKey($u->row()->user_id),
 			'callbook_type' => $callbook_type,
 			'callbook_username' => $callbook_username,
@@ -529,23 +566,35 @@ class User_Model extends CI_Model {
 	// If the user's session is corrupted in any way, it will clear the session
 	function validate_session() {
 
-		if($this->session->userdata('user_id'))
-		{
-			$user_id = $this->session->userdata('user_id');
-			$user_type = $this->session->userdata('user_type');
-			$user_hash = $this->session->userdata('user_hash');
-
-			if($this->_auth($user_id."-".$user_type, $user_hash)) {
-				// Freshen the session
-				$this->update_session($user_id);
-				return 1;
-			} else {
-				$this->clear_session();
-				return 0;
-			}
-		} else {
+		if (!$this->session->userdata('user_id')) {
 			return 0;
 		}
+
+		$user_id = $this->session->userdata('user_id');
+		$user_hash = $this->session->userdata('user_hash');
+
+		if (empty($user_hash)) {
+			$this->clear_session();
+			return 0;
+		}
+
+		// Re-read the user from the database and validate against persisted state.
+		$u = $this->get_by_id($user_id);
+		if ($u->num_rows() !== 1) {
+			$this->clear_session();
+			return 0;
+		}
+
+		$db_user_type = $u->row()->user_type;
+
+		if ($this->_auth($user_id."-".$db_user_type, $user_hash)) {
+			// Freshen the session
+			$this->update_session($user_id);
+			return 1;
+		}
+
+		$this->clear_session();
+		return 0;
 	}
 
 	// FUNCTION: bool authenticate($username, $password)

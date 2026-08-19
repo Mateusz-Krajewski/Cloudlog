@@ -26,9 +26,16 @@
 	<link rel="stylesheet" href="<?php echo base_url(); ?>assets/css/jquery.fancybox.min.css" />
 	<link rel="stylesheet" href="<?php echo base_url(); ?>assets/css/flag-icons.min.css" />
 
+	<?php
+	$load_leaflet = in_array($this->uri->segment(1), [NULL, '', 'dashboard', 'logbook', 'logbookadvanced', 'gridmap', 'activated_gridmap', 'qso', 'map', 'search', 'activators', 'activatorsmap'], true)
+		|| ($this->uri->segment(1) == 'awards' && in_array($this->uri->segment(2), ['cq', 'iota', 'dxcc', 'ffma', 'gridmaster', 'waja', 'was', 'sota', 'pota'], true));
+	?>
+
 	<!-- Maps -->
-	<link rel="stylesheet" type="text/css" href="<?php echo base_url(); ?>assets/js/leaflet/leaflet.css" />
-	<link rel="stylesheet" type="text/css" href="<?php echo base_url(); ?>assets/js/leaflet/Control.FullScreen.css" />
+	<?php if ($load_leaflet) { ?>
+		<link rel="stylesheet" type="text/css" href="<?php echo base_url(); ?>assets/js/leaflet/leaflet.css" />
+		<link rel="stylesheet" type="text/css" href="<?php echo base_url(); ?>assets/js/leaflet/Control.FullScreen.css" />
+	<?php } ?>
 
 	<?php if ($this->uri->segment(1) == "search" && $this->uri->segment(2) == "filter") { ?>
 		<link rel="stylesheet" type="text/css" href="<?php echo base_url(); ?>assets/css/query-builder.default.min.css" />
@@ -261,6 +268,31 @@
 						<a class="dropdown-item" href="<?php echo site_url('awards/wwff'); ?>"><i class="fas fa-leaf"></i> <?php echo lang('menu_wwff'); ?></a>
 						<div class="dropdown-divider"></div>
 							<?php } ?>
+						<?php
+						$CI->load->library('plugin_manager');
+						$CI->load->model('user_options_model');
+						$plugin_award_entries = $CI->plugin_manager->get_award_menu_entries();
+						$plugin_award_visibility = array();
+						$plugin_award_visibility_query = $CI->user_options_model->get_options('plugin_awards_menu');
+						foreach ($plugin_award_visibility_query->result() as $plugin_award_visibility_row) {
+							if ($plugin_award_visibility_row->option_key === 'show') {
+								$plugin_award_visibility[$plugin_award_visibility_row->option_name] = (string)$plugin_award_visibility_row->option_value === '1';
+							}
+						}
+						if (!empty($plugin_award_entries)) {
+							foreach ($plugin_award_entries as $plugin_award_entry) {
+								$show_plugin_award = true;
+								if (isset($plugin_award_visibility[$plugin_award_entry['slug']])) {
+									$show_plugin_award = (bool)$plugin_award_visibility[$plugin_award_entry['slug']];
+								}
+								if (!$show_plugin_award) {
+									continue;
+								}
+						?>
+						<a class="dropdown-item" href="<?php echo site_url($plugin_award_entry['route']); ?>"><i class="<?php echo htmlspecialchars($plugin_award_entry['icon']); ?>"></i> <?php echo htmlspecialchars($plugin_award_entry['title']); ?></a>
+						<div class="dropdown-divider"></div>
+							<?php }
+						} ?>
 						<a class="dropdown-item" href="<?php echo site_url('award'); ?>"><i class="fas fa-cog"></i> <?php echo lang('awards_menu_settings'); ?></a>
 					</div>
 				</li>						<li class="nav-item dropdown">
@@ -314,6 +346,10 @@
 
 									<div class="dropdown-divider"></div>
 
+									<a class="dropdown-item" href="<?php echo site_url('plugins'); ?>" title="Plugin Manager"><i class="fas fa-puzzle-piece"></i> Plugin Manager</a>
+
+									<div class="dropdown-divider"></div>
+
 									<a class="dropdown-item" href="<?php echo site_url('debug'); ?>" title="Debug Information"><i class="fas fa-bug"></i> <?php echo lang('menu_debug_information'); ?></a>
 
 								</div>
@@ -329,7 +365,7 @@
 							var input = document.getElementById('quicklog-input');
 							if (action === 'search') {
 								form.action = "<?php echo site_url('search'); ?>";
-								form.method = "post";
+								form.method = "get";
 							}
 							form.submit();
 						}
@@ -368,7 +404,7 @@
 						</button>
 					</form>
 				<?php } else { ?>
-					<form method="post" class="d-flex align-items-center" action="<?php echo site_url('search'); ?>">
+					<form method="get" class="d-flex align-items-center" action="<?php echo site_url('search'); ?>">
 						<input class="form-control me-2" id="nav-bar-search-input" type="search" name="callsign" placeholder="<?php echo lang('menu_search_text'); ?>" aria-label="Search">
 						<button title="<?php echo lang('menu_search_button'); ?>" class="btn btn-outline-success my-2 my-sm-0" type="submit"><i class="fas fa-search"></i>
 						</button>
